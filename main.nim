@@ -94,7 +94,7 @@ proc initRenderer(): (seq[ShaderAttribute], seq[ShaderAttribute]) =
   var renderer = engine.gpuDevice().simpleForwardRenderPass(
     vertexCode=vertexCode,
     fragmentCode=fragmentCode,
-    clearColor=Vec4f([0.05'f32, 0.02'f32, 0.02'f32, 1'f32])
+    clearColor=Vec4f([0.01'f32, 0.01'f32, 0.01'f32, 1'f32])
   )
   engine.setRenderer(renderer)
 
