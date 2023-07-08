@@ -13,7 +13,6 @@ type
     active: bool
     direction: Vec2f
   Enemy = ref object of Entity
-    active: bool
     direction: Vec2f
     state: EnemyState
     startedTargeting: float32
@@ -33,7 +32,6 @@ proc reset(enemy: Enemy) =
   let spawnDist = dim * (rand(0.5) + 0.5)
   enemy.transform = translate3d(cos(spawnDir) * spawnDist, sin(spawnDir) * spawnDist)
   enemy.state = Searching
-  enemy.active = true
   let d = rand(2 * PI)
   enemy.direction = newVec2f(cos(d), sin(d))
 
@@ -63,7 +61,7 @@ proc update(bullet: Bullet, player: Player, dt: float32) =
 
   let maxspeed = setting[float]("settings.bullet.maxspeed")
   bullet.transform = bullet.transform * translate3d(bullet.direction.x * maxspeed * dt, bullet.direction.y * maxspeed * dt)
-  if (player.position - bullet.position).length <= 0.5:
+  if (player.position - bullet.position).length <= 0.5 and player.life > 0:
     bullet.remove()
     dec player.life
     if player.life <= 0:
@@ -202,13 +200,14 @@ proc main() =
   mixer[].loadSound("bullet-impact-3", "bullet_impact_3.ogg")
   mixer[].loadSound("die", "player_die.ogg")
   mixer[].loadSound("rescued", "rescued.ogg")
+  mixer[].loadSound("finish", "level_finished.ogg")
   mixer[].addTrack("background", 0.5)
   discard mixer[].play("music", "background", loop=true, stopOtherSounds=true)
 
   # level
   var player = newPlayer()
   var health = newEntity("health", [("mesh", Component(rect(color="00FF0088")))])
-  var enemies = newSeq[Enemy](5)
+  var enemies = newSeq[Enemy](1)
   var bullets = newSeq[Bullet](100)
   for i in 0 ..< enemies.len:
     enemies[i] = newEnemy()
@@ -232,6 +231,7 @@ proc main() =
   var lastTime = cpuTime()
   var timeScale = 1'f32
   var theTime = 0'f32
+  var done = false
   while engine.updateInputs() == Running and not engine.keyIsDown(Escape):
     let
       t = cpuTime()
@@ -259,9 +259,15 @@ proc main() =
     # actual game updates
     if player.life >= 0:
       player.update(dt)
+    var activeEnemies = 0
     for enemy in enemies.mitems:
-      if enemy.active:
-        enemy.update(player, bullets, theTime, dt)
+      if enemy.state != Leaving:
+        inc activeEnemies
+      enemy.update(player, bullets, theTime, dt)
+    if activeEnemies == 0 and not done:
+      done = true
+      mixer[].stop("background")
+      discard mixer[].play("finish", level=0.85, stopOtherSounds=true)
     for bullet in bullets.mitems:
       if bullet.active:
         bullet.update(player, dt)
