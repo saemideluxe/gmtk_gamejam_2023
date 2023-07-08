@@ -17,7 +17,7 @@ type
     state: EnemyState
     startedTargeting: float32
 
-var engine = initEngine("But overcome evil with good")
+var engine = initEngine("But to overcome evil with good")
 
 proc reset(player: Player) =
   player.transform = Unit4
@@ -44,7 +44,7 @@ proc fire(bullet: Bullet, start: Vec2f, direction: Vec2f) =
   bullet.transform = translate3d(start.x, start.y)
   bullet.direction = direction
   bullet.active = true
-  discard mixer[].play("bullet-fired")
+  discard mixer[].play("bullet-fired", level=0.8)
 
 proc remove(bullet: Bullet) =
   bullet.transform = Mat4()
@@ -202,12 +202,13 @@ proc main() =
   mixer[].loadSound("rescued", "rescued.ogg")
   mixer[].loadSound("finish", "level_finished.ogg")
   mixer[].addTrack("background", 0.5)
+  mixer[].setLevel(0.7)
   discard mixer[].play("music", "background", loop=true, stopOtherSounds=true)
 
   # level
   var player = newPlayer()
   var health = newEntity("health", [("mesh", Component(rect(color="00FF0088")))])
-  var enemies = newSeq[Enemy](1)
+  var enemies = newSeq[Enemy](5)
   var bullets = newSeq[Bullet](100)
   for i in 0 ..< enemies.len:
     enemies[i] = newEnemy()
