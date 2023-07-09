@@ -37,6 +37,7 @@ task build, "build":
   rmDir(outdir)
   mkDir(outdir)
   cpFile(getCurrentDir() / "settings.ini", outdir / "settings.ini")
+  cpFile(getCurrentDir() / "CREDITS.txt", outdir / "CREDITS.txt")
   let resourcedir = joinPath(projectDir(), RESOURCEROOT)
   if existsDir(resourcedir):
     let outdir_resources = joinPath(outdir, RESOURCEROOT)
