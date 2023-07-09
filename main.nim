@@ -335,7 +335,7 @@ proc main() =
     if activeEnemies == 0 and not done:
       done = true
       mixer[].stop("background")
-      discard mixer[].play("finish", level=0.85, stopOtherSounds=true)
+      discard mixer[].play("finish", level=0.85)
     for bullet in bullets.mitems:
       if bullet.active:
         bullet.update(player, dt)
