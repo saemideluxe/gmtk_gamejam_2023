@@ -71,7 +71,13 @@ proc update(bullet: Bullet, player: Player, dt: float32) =
       let sound = 1 + rand(2)
       discard mixer[].play("bullet-impact-" & $sound)
 
-proc update(enemy: Enemy, player: Player, bullets: seq[Bullet], t: float32, dt: float32) =
+proc hug(enemy: Enemy, heart: Entity) =
+  let p = enemy.position
+  heart.transform = translate3d(p.x, p.y)
+  heart["ascend", EntityAnimation()].reset()
+  heart["ascend", EntityAnimation()].start()
+
+proc update(enemy: Enemy, player: Player, bullets: seq[Bullet], heart: Entity, t: float32, dt: float32) =
 
   let
     playerInRange = player.life > 0 and (player.position - enemy.position).length <= setting[float]("settings.enemy.detection_range")
@@ -88,11 +94,15 @@ proc update(enemy: Enemy, player: Player, bullets: seq[Bullet], t: float32, dt: 
       if playerInRange:
         enemy.state = Targeting
         enemy.startedTargeting = t
+        enemy["walking", EntityAnimation()].stop()
+        enemy["targeting", EntityAnimation()].start()
     of Targeting:
       if not playerInRange:
         enemy.state = Searching
         let d = rand(2 * PI)
         enemy.direction = newVec2f(cos(d), sin(d))
+        enemy["walking", EntityAnimation()].start()
+        enemy["targeting", EntityAnimation()].reset()
       else:
         enemy.direction.x = 0.0
         enemy.direction.y = 0.0
@@ -100,13 +110,15 @@ proc update(enemy: Enemy, player: Player, bullets: seq[Bullet], t: float32, dt: 
           for bullet in bullets:
             if not bullet.active:
               bullet.fire(enemy.position, (player.position - enemy.position).normalized)
+              enemy["targeting", EntityAnimation()].reset()
+              enemy["targeting", EntityAnimation()].start()
               break
           enemy.startedTargeting = t
     of Leaving:
       if enemy.position.x < -max_area_x or enemy.position.x > max_area_x: enemy.direction = newVec2f()
       if enemy.position.y < -max_area_y or enemy.position.y > max_area_y: enemy.direction = newVec2f()
 
-  if (player.position - enemy.position).length <= 1.0 and (engine.keyWasPressed(Space) or engine.keyWasPressed(Delete)) and enemy.state != Leaving:
+  if (player.position - enemy.position).length <= setting[float]("settings.enemy.hugging_distance") and (engine.keyWasPressed(Space) or engine.keyWasPressed(Delete)) and enemy.state != Leaving:
     enemy.state = Leaving
     enemy.direction = enemy.position.normalized()
     var newColors: seq[Vec4f]
@@ -114,10 +126,11 @@ proc update(enemy: Enemy, player: Player, bullets: seq[Bullet], t: float32, dt: 
       newColors.add hexToColorAlpha("FF8888FF")
     updateMeshData(enemy["mesh", Mesh()], "color", newColors)
     discard mixer[].play("rescued", level=0.9)
+    enemy.hug(heart)
 
   # movment
   let move = enemy.direction * maxspeed * dt
-  enemy.transform = enemy.transform * translate3d(move.x, move.y)
+  enemy.transform = enemy.originalTransform * translate3d(move.x, move.y)
 
 proc update(player: Player, dt: float32) =
   var
@@ -140,7 +153,24 @@ proc newPlayer(): Player =
 
 proc newEnemy(): Enemy =
   result = Enemy(name: "enemy")
-  result["mesh"] = circle(color="FF0000FF")
+  result["mesh"] = rect(color="FF0000FF")
+  result["walking"] = newEntityAnimation(
+    newAnimation(@[
+      keyframe(0, Unit4),
+      keyframe(0.5, scale3d(0.8, 0.8)),
+      keyframe(1, Unit4)
+    ], 0.3 + rand(0.2), Forward, 0)
+  )
+  result["targeting"] = newEntityAnimation(
+    newAnimation(@[
+      keyframe(0, Unit4),
+      keyframe(0.25, rotate3d(PI/2, Z)),
+      keyframe(0.5, rotate3d(PI, Z)),
+      keyframe(0.75, rotate3d(-PI/2, Z)),
+      keyframe(1, Unit4),
+    ], setting[float]("settings.enemy.targeting_time"))
+  )
+  result["walking", EntityAnimation()].start()
   result.reset()
 
 proc newBullet(): Bullet =
@@ -149,6 +179,38 @@ proc newBullet(): Bullet =
   transform[Vec3f](mesh, "position", scale3d(0.2, 0.2))
   result["mesh"] = mesh
   result.transform = Mat4()
+
+proc newHeart(): Entity =
+  let pos = [
+    newVec3f(0, 0.5), # bottom, 0
+
+    newVec3f(-0.4, 0), # center left, 1
+    newVec3f(0, 0), # center middle, 2
+    newVec3f(0.4, 0), # center right, 3
+
+    newVec3f(-0.3, -0.25), # left half, one, 4
+    newVec3f(-0.15, -0.25), # left half, two, 5
+    newVec3f(0.15, -0.25), # right half, one, 6
+    newVec3f(0.3, -0.25), # right half, two, 7
+  ]
+  let c = hexToColorAlpha("FF8888FF")
+  let mesh = newMesh(
+    positions=pos,
+    indices=[[0, 1, 2], [0, 2, 3], [2, 1, 4], [2, 4, 5], [2, 6, 7], [2, 7, 3]],
+    colors=[c, c, c, c, c, c, c, c],
+  )
+  transform[Vec3f](mesh, "position", scale3d(0.5, 0.5))
+  let animation = newEntityAnimation(
+    newAnimation(@[
+      keyframe(0, Unit4),
+      keyframe(0.999, translate3d(0, -1)),
+      keyframe(1, Mat4())
+    ], 1, Forward)
+  )
+  result = newEntity(name = "heart", [("mesh", Component(mesh)), ("ascend", (Component(animation)))])
+  result["ascend", EntityAnimation()].start()
+  result.transform = Mat4()
+
 
 proc initRenderer(): (seq[ShaderAttribute], seq[ShaderAttribute]) =
   const
@@ -210,6 +272,7 @@ proc main() =
   var health = newEntity("health", [("mesh", Component(rect(color="00FF0088")))])
   var enemies = newSeq[Enemy](5)
   var bullets = newSeq[Bullet](100)
+  var heart = newHeart()
   for i in 0 ..< enemies.len:
     enemies[i] = newEnemy()
   for i in 0 ..< bullets.len:
@@ -222,6 +285,7 @@ proc main() =
   level1.root.add player
   for bullet in bullets:
     level1.root.add bullet
+  level1.root.add heart
   level1.root.add health
 
   engine.addScene(level1, vertexInputs, samplers)
@@ -229,15 +293,18 @@ proc main() =
   level1.addShaderGlobal("view", scale3d(0.1, 0.1))
 
   # mainloop
-  var lastTime = cpuTime()
-  var timeScale = 1'f32
-  var theTime = 0'f32
-  var done = false
+  var
+    lastTime = cpuTime()
+    timeScale = 1'f32
+    theTime = 0'f32
+    done = false
+    lastRenderTime = lastTime
   while engine.updateInputs() == Running and not engine.keyIsDown(Escape):
     let
       t = cpuTime()
       dt = (t - lastTime) * timeScale
       configChanged = hadConfigUpdate()
+
     theTime += dt
     lastTime = t
 
@@ -264,7 +331,7 @@ proc main() =
     for enemy in enemies.mitems:
       if enemy.state != Leaving:
         inc activeEnemies
-      enemy.update(player, bullets, theTime, dt)
+      enemy.update(player, bullets, heart, theTime, dt)
     if activeEnemies == 0 and not done:
       done = true
       mixer[].stop("background")
@@ -274,8 +341,13 @@ proc main() =
         bullet.update(player, dt)
 
     health.transform = translate3d(0, -9) * scale3d(float(player.life), 0.7)
+
     engine.updateAnimations(level1, dt)
-    engine.renderScene(level1)
+    if not heart["ascend", EntityAnimation()].playing:
+      heart.transform = Mat4()
+    if cpuTime() - lastRenderTime >= (1.0 / setting[float]("settings.video.fps")):
+      lastRenderTime = t
+      engine.renderScene(level1)
 
 when isMainModule:
   main()
